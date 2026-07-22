@@ -63,18 +63,6 @@
                         "explode": false
                     },
                     {
-                        "name": "requestTimeoutSecs",
-                        "in": "query",
-                        "description": "The maximum time in seconds available for the request, including querying Google Search and scraping the target web pages. For example, OpenAI allows only [45 seconds](https://platform.openai.com/docs/actions/production#timeouts) for custom actions. If a target page loading and extraction exceeds this timeout, the corresponding page will be skipped in results to ensure at least some results are returned within the timeout. If no page is extracted within the timeout, the whole request fails.",
-                        "required": false,
-                        "schema": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": 600,
-                            "default": 40
-                        }
-                    },
-                    {
                         "name": "serpProxyGroup",
                         "in": "query",
                         "description": "Enables overriding the default Apify Proxy group used for fetching Google Search results.",
@@ -96,9 +84,20 @@
                         "schema": {
                             "type": "integer",
                             "minimum": 0,
-                            "maximum": 3,
-                            "default": 1
+                            "maximum": 5,
+                            "default": 2
                         }
+                    },
+                    {
+                        "name": "proxyConfiguration",
+                        "in": "query",
+                        "description": "Apify Proxy configuration used for scraping the target web pages, as a JSON-encoded object string.",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "{\"useApifyProxy\": true}"
+                        },
+                        "example": "{\"useApifyProxy\": true}"
                     },
                     {
                         "name": "scrapingTool",
@@ -154,16 +153,6 @@
                         "schema": {
                             "type": "boolean",
                             "default": true
-                        }
-                    },
-                    {
-                        "name": "debugMode",
-                        "in": "query",
-                        "description": "If enabled, the Actor will store debugging information into the resulting dataset under the `debug` field.",
-                        "required": false,
-                        "schema": {
-                            "type": "boolean",
-                            "default": false
                         }
                     }
                 ],
