@@ -112,6 +112,15 @@ The `/search` GET HTTP endpoint accepts all the input parameters [described on t
 
 RAG Web Browser has been designed for easy integration with LLM applications, GPTs, OpenAI Assistants, and RAG pipelines using function calling.
 
+### Use Apify MCP Server
+You can connect to the MCP server using clients like ClaudeDesktop and LibreChat, or even build your own. Read all about how you can [set up Apify Actors with MCP](https://blog.apify.com/how-to-use-mcp/).
+
+For Google Search Results Scraper, go to the MCP tab and then go through the following steps:
+
+Start a Server-Sent Events (SSE) session to receive a sessionId
+Send API messages using that sessionId to trigger the scraper
+The message starts the Google Search Results Scraper with the provided input
+The response should be: Accepted
 ### OpenAPI schema
 
 Here you can find the [OpenAPI 3.1.0 schema](https://apify.com/apify/rag-web-browser/endpoints)
@@ -203,6 +212,11 @@ The **most critical performance decision** is selecting the appropriate scraping
 - **For dynamic websites**: Use the default `scrapingTool=browser-playwright` when targeting sites with JavaScript-rendered content or interactive elements
 
 This single parameter choice can significantly impact both response times and content quality, so select based on your target websites' characteristics.
+
+### Result count
+When you use the RAG Web Browser to perform a web search, limit the results to 10 using the maxResults parameter.
+
+If you request more than 10 results, the Actor will need to go through several pages of Google search results, which increases the response time.
 
 ### Request timeout
 
