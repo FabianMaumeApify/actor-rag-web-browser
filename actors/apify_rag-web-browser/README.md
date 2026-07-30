@@ -48,6 +48,12 @@ For a search query like `fast web browser in RAG pipelines`, the Actor will retu
 ]
 ```
 
+**This actor supports Google search parameters.** You can use:
+- "site:apify.com keyword" to search results only on the Apify website
+- "after:2026-01-31 keyword" to get results from after the 1st of January 2026
+- "before:2026-01-31 keyword" to get results from before the 1st of January 2026
+
+
 If you enter a specific URL such as `https://openai.com/index/introducing-chatgpt-search/`, the Actor will extract
 the web page content directly like this:
 
@@ -113,14 +119,10 @@ The `/search` GET HTTP endpoint accepts all the input parameters [described on t
 RAG Web Browser has been designed for easy integration with LLM applications, GPTs, OpenAI Assistants, and RAG pipelines using function calling.
 
 ### Use Apify MCP Server
-You can connect to the MCP server using clients like ClaudeDesktop and LibreChat, or even build your own. Read all about how you can [set up Apify Actors with MCP](https://blog.apify.com/how-to-use-mcp/).
+You can connect to the MCP server using clients like ClaudeDesktop and LibreChat, or even build your own. The RAG Web Browser is the default Actor for the MCP server, so you will access it right after installing the MCP server.
 
-For Google Search Results Scraper, go to the MCP tab and then go through the following steps:
+Simply follow the tutorial to setup [Apify MCP server](https://blog.apify.com/how-to-use-mcp/).
 
-Start a Server-Sent Events (SSE) session to receive a sessionId
-Send API messages using that sessionId to trigger the scraper
-The message starts the Google Search Results Scraper with the provided input
-The response should be: Accepted
 ### OpenAPI schema
 
 Here you can find the [OpenAPI 3.1.0 schema](https://apify.com/apify/rag-web-browser/endpoints)
