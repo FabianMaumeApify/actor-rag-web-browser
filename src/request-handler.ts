@@ -8,7 +8,7 @@ import { blockMediaRequests, SKIPPED_MEDIA_FILE_MESSAGE } from './media.js';
 import { addResultToResponse, responseData, sendResponseIfFinished } from './responses.js';
 import type { ContentCrawlerUserData, Output } from './types.js';
 import { addTimeMeasureEvent, isActorStandby, transformTimeMeasuresToRelative } from './utils.js';
-import { processHtml } from './website-content-crawler/html-processing.js';
+import { extractTitle, processHtml } from './website-content-crawler/html-processing.js';
 import { htmlToMarkdown } from './website-content-crawler/markdown.js';
 
 let ACTOR_TIMEOUT_AT: number | undefined;
@@ -151,7 +151,7 @@ async function handleContent(
         searchResult: request.userData.searchResult!,
         metadata: {
             author: $('meta[name=author]').first().attr('content') ?? undefined,
-            title: $('title').first().text(),
+            title: extractTitle($),
             description: $('meta[name=description]').first().attr('content') ?? undefined,
             languageCode: $html.first().attr('lang') ?? undefined,
             url: request.url,
