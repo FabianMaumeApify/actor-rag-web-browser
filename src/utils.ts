@@ -48,6 +48,22 @@ export function isActorStandby(): boolean {
 }
 
 /**
+ * Aborts the run with a terminal status message, instead of crashing or failing it.
+ */
+export async function abortRun(statusMessage: string): Promise<never> {
+    log.error(statusMessage);
+
+    if (!Actor.isAtHome()) {
+        process.exit(1);
+    }
+
+    // Aborting gracefully buys the 30 seconds that the teardown needs before the container is stopped.
+    await Actor.abort(Actor.getEnv().actorRunId!, { statusMessage, gracefully: true });
+    await Actor.exit({ exit: false });
+    process.exit(0);
+}
+
+/**
  * Extracts the calling end-user's authorization from the x-apify-user-authorization header.
  * Node lower-cases header names, and the header could theoretically arrive as a string array.
  */
