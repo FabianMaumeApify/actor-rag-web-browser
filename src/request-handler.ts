@@ -1,14 +1,28 @@
+import type { IncomingHttpHeaders } from 'node:http';
+
 import type { PlaywrightBlocker } from '@ghostery/adblocker-playwright';
 import { Actor } from 'apify';
 import { load } from 'cheerio';
 import { type CheerioCrawlingContext, htmlToText, log, type PlaywrightCrawlingContext, type Request, sleep } from 'crawlee';
 
 import { ContentCrawlerStatus, ContentCrawlerTypes } from './const.js';
+import { blockMediaRequests, SKIPPED_MEDIA_FILE_MESSAGE } from './media.js';
 import { addResultToResponse, responseData, sendResponseIfFinished } from './responses.js';
 import type { ContentCrawlerUserData, Output } from './types.js';
 import { addTimeMeasureEvent, isActorStandby, transformTimeMeasuresToRelative } from './utils.js';
-import { processHtml } from './website-content-crawler/html-processing.js';
+import {
+    extractCanonicalUrl,
+    extractJsonLd,
+    extractOpenGraphProperties,
+    extractTitle,
+    processHtml,
+} from './website-content-crawler/html-processing.js';
 import { htmlToMarkdown } from './website-content-crawler/markdown.js';
+
+/** Same as the default of the `clickElementsCssSelector` input of Website Content Crawler. */
+const CLICK_ELEMENTS_CSS_SELECTOR = '[aria-expanded="false"]';
+
+const CLICK_RENDER_WAIT_MS = 500;
 
 let ACTOR_TIMEOUT_AT: number | undefined;
 try {
@@ -69,39 +83,89 @@ export async function waitForDynamicContent(context: PlaywrightCrawlingContext, 
     }
 }
 
+/**
+ * Tries to expand collapsed content by clicking on it, so that its text is included in the extracted
+ * content, e.g. https://www.checkout.com/docs/support/reporting (adapted from: Website Content Crawler).
+ *
+ * A click handler can still navigate the page with JavaScript, and then the content is extracted from
+ * the page it navigated to, the same as in Website Content Crawler.
+ */
+async function expandClickableElements(page: PlaywrightCrawlingContext['page'], cssSelector: string) {
+    const clickedCount = await page.evaluate((selector) => {
+        // only click on items that don't have `href` attribute or they lead to the current page
+        const elements = [...document.querySelectorAll(selector)].filter((el) => {
+            const href = el.getAttribute('href');
+            return (!href || href.startsWith('#')) && typeof (el as HTMLElement).click === 'function';
+        });
+
+        for (const el of elements) {
+            (el as HTMLElement).click();
+        }
+
+        return elements.length;
+    }, cssSelector);
+
+    if (clickedCount > 0) {
+        log.debug(`Clicked ${clickedCount} element(s) matching \`${cssSelector}\``);
+        await sleep(CLICK_RENDER_WAIT_MS);
+    }
+}
+
+type ContentCrawlingContext = PlaywrightCrawlingContext<ContentCrawlerUserData> | CheerioCrawlingContext<ContentCrawlerUserData>;
+
 function isValidContentType(contentType: string | undefined) {
     return ['text', 'html', 'xml'].some((type) => contentType?.includes(type));
+}
+
+/** Playwright exposes the headers through a method, but the context types also allow a plain object. */
+function getPlaywrightResponseHeaders(response: PlaywrightCrawlingContext['response']): IncomingHttpHeaders | undefined {
+    if (!response) return undefined;
+
+    const { headers }: { headers: IncomingHttpHeaders | (() => IncomingHttpHeaders) } = response;
+    return typeof headers === 'function' ? response.headers() : headers;
+}
+
+/**
+ * Stores an empty result for a page we haven't extracted any content from.
+ */
+async function pushSkippedResult(
+    context: ContentCrawlingContext,
+    httpStatusMessage: string,
+    httpStatusCode?: number,
+) {
+    const { request } = context;
+    const { responseId } = request.userData;
+
+    const resultSkipped: Output = {
+        crawl: {
+            httpStatusCode,
+            httpStatusMessage,
+            loadedAt: new Date(),
+            uniqueKey: request.uniqueKey,
+            requestStatus: ContentCrawlerStatus.FAILED,
+        },
+        metadata: { url: request.url },
+        searchResult: request.userData.searchResult!,
+        query: request.userData.query,
+        text: '',
+    };
+    log.info(`Adding result to the Apify dataset, url: ${request.url}`);
+    await context.pushData(resultSkipped);
+    if (responseId) {
+        addResultToResponse(responseId, request.uniqueKey, resultSkipped);
+        sendResponseIfFinished(responseId);
+    }
 }
 
 async function checkValidResponse(
     $: CheerioCrawlingContext['$'],
     contentType: string | undefined,
-    context: PlaywrightCrawlingContext<ContentCrawlerUserData> | CheerioCrawlingContext<ContentCrawlerUserData>,
+    statusCode: number | undefined,
+    context: ContentCrawlingContext,
 ) {
-    const { request, response } = context;
-    const { responseId } = request.userData;
-
     if (!$ || !isValidContentType(contentType)) {
-        log.info(`Skipping URL ${request.loadedUrl} as it could not be parsed.`, { contentType });
-        const resultSkipped: Output = {
-            crawl: {
-                httpStatusCode: response?.status(),
-                httpStatusMessage: "Couldn't parse the content",
-                loadedAt: new Date(),
-                uniqueKey: request.uniqueKey,
-                requestStatus: ContentCrawlerStatus.FAILED,
-            },
-            metadata: { url: request.url },
-            searchResult: request.userData.searchResult!,
-            query: request.userData.query,
-            text: '',
-        };
-        log.info(`Adding result to the Apify dataset, url: ${request.url}`);
-        await context.pushData(resultSkipped);
-        if (responseId) {
-            addResultToResponse(responseId, request.uniqueKey, resultSkipped);
-            sendResponseIfFinished(responseId);
-        }
+        log.info(`Skipping URL ${context.request.loadedUrl} as it could not be parsed.`, { contentType });
+        await pushSkippedResult(context, "Couldn't parse the content", statusCode);
         return false;
     }
 
@@ -112,6 +176,7 @@ async function handleContent(
     $: CheerioCrawlingContext['$'],
     crawlerType: ContentCrawlerTypes,
     statusCode: number | undefined,
+    headers: IncomingHttpHeaders | undefined,
     context: PlaywrightCrawlingContext<ContentCrawlerUserData> | CheerioCrawlingContext<ContentCrawlerUserData>,
 ) {
     const { request } = context;
@@ -136,15 +201,22 @@ async function handleContent(
         searchResult: request.userData.searchResult!,
         metadata: {
             author: $('meta[name=author]').first().attr('content') ?? undefined,
-            title: $('title').first().text(),
+            title: extractTitle($),
             description: $('meta[name=description]').first().attr('content') ?? undefined,
+            keywords: $('meta[name=keywords]').first().attr('content') ?? undefined,
             languageCode: $html.first().attr('lang') ?? undefined,
             url: request.url,
             redirectedUrl: request.loadedUrl,
+            canonicalUrl: extractCanonicalUrl($, request.loadedUrl ?? request.url),
+            openGraph: extractOpenGraphProperties($),
+            jsonLd: extractJsonLd($),
+            headers,
         },
         query: request.userData.query,
         text: settings.outputFormats.includes('text') ? text : undefined,
-        markdown: settings.outputFormats.includes('markdown') ? htmlToMarkdown(processedHtml) : undefined,
+        markdown: settings.outputFormats.includes('markdown')
+            ? htmlToMarkdown(processedHtml, request.loadedUrl ?? request.url)
+            : undefined,
         html: settings.outputFormats.includes('html') ? processedHtml : undefined,
     };
 
@@ -173,6 +245,13 @@ export async function requestHandlerPlaywright(
 
     log.info(`Processing URL: ${request.url}`);
     addTimeMeasureEvent(request.userData, 'playwright-request-start');
+
+    // Media file requests are created with `skipNavigation` (see `createRequest`), so there is no page to process.
+    if (request.skipNavigation) {
+        await pushSkippedResult(context, SKIPPED_MEDIA_FILE_MESSAGE);
+        return;
+    }
+
     if (settings.dynamicContentWaitSecs > 0) {
         await waitForDynamicContent(context, settings.dynamicContentWaitSecs * 1000);
         addTimeMeasureEvent(request.userData, 'playwright-wait-dynamic-content');
@@ -184,6 +263,9 @@ export async function requestHandlerPlaywright(
             try {
                 await blocker.enableBlockingInPage(page);
                 log.debug('Ghostery blocker enabled');
+                // The Ghostery blocker continues all the requests it doesn't block, which would take
+                // precedence over the media blocking set up in the pre-navigation hook.
+                await blockMediaRequests(page);
             } catch (err) {
                 log.debug(`Ghostery blocker failed: ${err instanceof Error ? err.message : String(err)}`);
             }
@@ -200,18 +282,22 @@ export async function requestHandlerPlaywright(
         addTimeMeasureEvent(request.userData, 'playwright-remove-cookie');
     }
 
+    if (page) {
+        await expandClickableElements(page, CLICK_ELEMENTS_CSS_SELECTOR);
+        addTimeMeasureEvent(request.userData, 'playwright-expand-clickable-elements');
+    }
+
     // Parsing the page after the dynamic content has been loaded / cookie warnings removed
     const $ = await context.parseWithCheerio();
     addTimeMeasureEvent(request.userData, 'playwright-parse-with-cheerio');
 
-    const headers = response?.headers instanceof Function ? response.headers() : response?.headers;
-    // @ts-expect-error false-positive?
-    const isValidResponse = await checkValidResponse($, headers?.['content-type'], context);
-    if (!isValidResponse) return;
-
+    const headers = getPlaywrightResponseHeaders(response);
     const statusCode = response?.status();
 
-    await handleContent($, ContentCrawlerTypes.PLAYWRIGHT, statusCode, context);
+    const isValidResponse = await checkValidResponse($, headers?.['content-type'], statusCode, context);
+    if (!isValidResponse) return;
+
+    await handleContent($, ContentCrawlerTypes.PLAYWRIGHT, statusCode, headers, context);
 }
 
 export async function requestHandlerCheerio(
@@ -225,12 +311,18 @@ export async function requestHandlerCheerio(
     log.info(`Processing URL: ${request.url}`);
     addTimeMeasureEvent(request.userData, 'cheerio-request-start');
 
-    const isValidResponse = await checkValidResponse($, response.headers['content-type'], context);
+    // Media file requests are created with `skipNavigation` (see `createRequest`), so there is no response.
+    if (request.skipNavigation) {
+        await pushSkippedResult(context, SKIPPED_MEDIA_FILE_MESSAGE);
+        return;
+    }
+
+    const { statusCode } = response;
+
+    const isValidResponse = await checkValidResponse($, response.headers['content-type'], statusCode, context);
     if (!isValidResponse) return;
 
-    const statusCode = response?.statusCode;
-
-    await handleContent($, ContentCrawlerTypes.CHEERIO, statusCode, context);
+    await handleContent($, ContentCrawlerTypes.CHEERIO, statusCode, response.headers, context);
 }
 
 export async function failedRequestHandler(request: Request, err: Error, crawlerType: ContentCrawlerTypes) {

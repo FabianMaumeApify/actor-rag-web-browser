@@ -7,7 +7,7 @@ import { firefox } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { requestHandlerPlaywright } from '../src/request-handler.js';
-import type { ContentCrawlerUserData } from '../src/types.js';
+import type { ContentCrawlerUserData, ContentScraperSettings, Output } from '../src/types.js';
 import { createRequest } from '../src/utils.js';
 import { startTestServer, stopTestServer } from './helpers/server.js';
 
@@ -27,9 +27,12 @@ describe('Playwright Crawler Content Tests', () => {
         await stopTestServer(testServer);
     });
 
-    it('test basic content extraction with playwright', async () => {
+    /**
+     * Scrapes a single URL and returns the results the request handler pushed to the dataset.
+     */
+    async function scrapeWithPlaywright(url: string, settings: Partial<ContentScraperSettings> = {}) {
+        const results: Output[] = [];
         const failedUrls = new Set<string>();
-        const successUrls = new Set<string>();
 
         // Create memory storage and request queue
         const client = new MemoryStorage({ persistStorage: false });
@@ -38,14 +41,10 @@ describe('Playwright Crawler Content Tests', () => {
         const crawler = new PlaywrightCrawler({
             requestQueue,
             requestHandler: async (context) => {
-                const pushDataSpy = vi.spyOn(context, 'pushData').mockResolvedValue(undefined);
+                vi.spyOn(context, 'pushData').mockImplementation(async (data) => {
+                    results.push(data as Output);
+                });
                 await requestHandlerPlaywright(context as unknown as PlaywrightCrawlingContext<ContentCrawlerUserData>);
-
-                expect(pushDataSpy).toHaveBeenCalledTimes(1);
-                expect(pushDataSpy).toHaveBeenCalledWith(expect.objectContaining({
-                    text: expect.stringContaining('hello world'),
-                }));
-                successUrls.add(context.request.url);
             },
             failedRequestHandler: async ({ request }, error) => {
                 log.error(`Request ${request.url} failed with error: ${error.message}`);
@@ -65,7 +64,7 @@ describe('Playwright Crawler Content Tests', () => {
         const r = createRequest(
             'query',
             {
-                url: `${baseUrl}/basic`,
+                url,
                 description: 'Test request',
                 rank: 1,
                 title: 'Test title',
@@ -76,6 +75,7 @@ describe('Playwright Crawler Content Tests', () => {
                 outputFormats: ['text'],
                 maxHtmlCharsToProcess: 100000,
                 dynamicContentWaitSecs: 20,
+                ...settings,
             },
             [],
         );
@@ -85,7 +85,30 @@ describe('Playwright Crawler Content Tests', () => {
 
         await crawler.run();
 
+        return { results, failedUrls };
+    }
+
+    it('test basic content extraction with playwright', async () => {
+        const { results, failedUrls } = await scrapeWithPlaywright(`${baseUrl}/basic`);
+
         expect(failedUrls.size).toBe(0);
-        expect(successUrls.size).toBe(1);
+        expect(results).toHaveLength(1);
+        expect(results[0].text).toContain('hello world');
+    });
+
+    it('expands clickable elements to extract collapsed content', async () => {
+        const { results, failedUrls } = await scrapeWithPlaywright(`${baseUrl}/clickable`, {
+            dynamicContentWaitSecs: 2,
+        });
+
+        expect(failedUrls.size).toBe(0);
+        expect(results).toHaveLength(1);
+        expect(results[0].text).toContain('always visible content');
+        // Content of every collapsed element, which is added to the page only once it's clicked
+        expect(results[0].text).toContain('collapsed panel content');
+        expect(results[0].text).toContain('anchor panel content');
+        // The link leading to another page must not be clicked, not even to its fragment
+        expect(results[0].text).not.toContain('link panel content');
+        expect(results[0].text).not.toContain('hello world');
     });
 });

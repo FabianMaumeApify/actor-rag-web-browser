@@ -14,7 +14,9 @@ similar to the [web browsing](https://openai.com/index/introducing-chatgpt-searc
 - 🔄 **Flexible scraping** with Browser mode for complex websites or Plain HTML mode for faster scraping
 - 🕷 Automatically **bypasses anti-scraping protections** using proxies and browser fingerprints
 - 📝 Output formats include **Markdown**, plain text, and HTML
-- 🔌 Supports **OpenAPI and Model Context Protocol (MCP)** for easy integration
+- 🔗 **Links are converted to absolute URLs**, so they stay valid outside of the page they came from
+- 🪗 **Collapsed sections are expanded** in Browser mode, so their content is not missing from the output
+- 🔌 Supports **OpenAPI and MCP** for easy integration
 - 🪟 It's **open source**, so you can review and modify it
 - 🧹**HTML to Markdown conversion**
 
@@ -68,7 +70,17 @@ the web page content directly like this:
         "url": "https://openai.com/index/introducing-chatgpt-search/",
         "title": "Introducing ChatGPT search | OpenAI",
         "description": "Get fast, timely answers with links to relevant web sources",
-        "languageCode": "en-US"
+        "languageCode": "en-US",
+        "canonicalUrl": "https://openai.com/index/introducing-chatgpt-search/",
+        "openGraph": [
+            { "property": "og:title", "content": "Introducing ChatGPT search" },
+            { "property": "og:description", "content": "Get fast, timely answers with links to relevant web sources" },
+            { "property": "og:url", "content": "https://openai.com/index/introducing-chatgpt-search/" }
+        ],
+        "headers": {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "public, max-age=0, must-revalidate"
+        }
     },
     "markdown": "# Introducing ChatGPT search | OpenAI\n\nGet fast, timely answers with links to relevant web sources.\n\nChatGPT can now search the web in a much better way than before. ..."
 }]
@@ -205,6 +217,25 @@ Here are specific situations that might occur when the timeout is reached:
 - One of the target pages hasn't loaded dynamic content (within the `dynamicContentWaitSecs` deadline)
   => the Actor extracts content from the currently loaded HTML
 
+
+### Media files
+
+Media files carry no text for the LLM, so the Actor never downloads them:
+
+- Images, audio, video, and fonts of the scraped page are blocked in Browser mode (`scrapingTool=browser-playwright`).
+  This saves bandwidth and often speeds up the page load, and it has no effect on the extracted content.
+- Search results (and a `query` that is a URL) pointing directly to a media file, e.g. `https://example.com/video.mp4`,
+  are not crawled at all. Such a result is returned with an empty text and `Skipped media file` as the HTTP status message.
+
+### Collapsed content
+
+Some web pages keep parts of their content hidden until the reader expands them, e.g. accordions or
+FAQ sections, and add it to the page only when it's clicked. To capture such content, the Actor clicks
+the collapsed elements of the page, i.e. those matching the `[aria-expanded="false"]` CSS selector,
+in Browser mode (`scrapingTool=browser-playwright`) before it extracts the content.
+
+Elements linking to another page are not clicked, so that the Actor stays on the page it was asked
+to extract.
 
 ### Reducing response time
 

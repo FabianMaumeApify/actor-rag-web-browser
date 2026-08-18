@@ -1,3 +1,5 @@
+import type { IncomingHttpHeaders } from 'node:http';
+
 import type { ProxyConfigurationOptions } from 'apify';
 import type { CheerioCrawlerOptions, PlaywrightCrawlerOptions } from 'crawlee';
 
@@ -45,6 +47,11 @@ export type Input = UrlToMarkdownInput | RagWebBrowserInput;
 
 export type SearchResultType = 'ORGANIC' | 'SUGGESTED';
 
+export type OpenGraphProperty = {
+    property: string;
+    content: string;
+};
+
 export type OrganicResult = {
     description?: string;
     title?: string;
@@ -69,6 +76,7 @@ export interface TimeMeasure {
         | 'error'
         | 'playwright-request-start'
         | 'playwright-wait-dynamic-content'
+        | 'playwright-expand-clickable-elements'
         | 'playwright-parse-with-cheerio'
         | 'playwright-process-html'
         | 'playwright-remove-cookie'
@@ -141,9 +149,14 @@ export type Output = {
         title?: string | null;
         url: string;
         redirectedUrl?: string | null;
+        canonicalUrl?: string;
         description?: string | null;
         author?: string | null;
+        keywords?: string | null;
         languageCode?: string | null;
+        openGraph?: OpenGraphProperty[];
+        jsonLd?: unknown[];
+        headers?: IncomingHttpHeaders;
     };
 };
 

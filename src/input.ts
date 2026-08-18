@@ -7,6 +7,7 @@ import { firefox } from 'playwright';
 import ragWebBrowserInputSchema from '../actors/apify_rag-web-browser/.actor/input_schema.json' with { type: 'json' };
 import { ContentCrawlerTypes } from './const.js';
 import { UserInputError } from './errors.js';
+import { blockMediaRequests } from './media.js';
 import { getMiniActor } from './mini-actors.js';
 import type {
     ContentCrawlerOptions,
@@ -18,6 +19,7 @@ import type {
     SERPProxyGroup,
     UrlToMarkdownInput,
 } from './types.js';
+import { abortRun } from './utils.js';
 
 /**
  * Processes the input and returns an array of crawler settings. This is ideal for startup of STANDBY mode
@@ -26,7 +28,7 @@ import type {
 export async function processStandbyInput(originalInput: Partial<Input>) {
     const { input, searchCrawlerOptions, contentScraperSettings } = await processInputInternal(originalInput, true);
 
-    const proxy = await Actor.createProxyConfiguration(input.proxyConfiguration);
+    const proxy = await createContentProxyConfiguration(input.proxyConfiguration);
     const contentCrawlerOptions: ContentCrawlerOptions[] = [
         createPlaywrightCrawlerOptions(input, proxy),
         createCheerioCrawlerOptions(input, proxy),
@@ -41,7 +43,7 @@ export async function processStandbyInput(originalInput: Partial<Input>) {
 export async function processInput(originalInput: Partial<Input>) {
     const { input, searchCrawlerOptions, contentScraperSettings } = await processInputInternal(originalInput);
 
-    const proxy = await Actor.createProxyConfiguration(input.proxyConfiguration);
+    const proxy = await createContentProxyConfiguration(input.proxyConfiguration);
     const contentCrawlerOptions: ContentCrawlerOptions = input.scrapingTool === 'raw-http'
         ? createCheerioCrawlerOptions(input, proxy, false)
         : createPlaywrightCrawlerOptions(input, proxy, false);
@@ -209,6 +211,14 @@ async function processUrlToMarkdownInput(input: Partial<UrlToMarkdownInput>): Pr
     return validatedInput;
 }
 
+async function createContentProxyConfiguration(proxyConfiguration: ProxyConfigurationOptions) {
+    try {
+        return await Actor.createProxyConfiguration(proxyConfiguration);
+    } catch (e) {
+        return abortRun(`Cannot use Apify Proxy for scraping the target pages: ${(e as Error).message}`);
+    }
+}
+
 function createPlaywrightCrawlerOptions(
     input: Input,
     proxy: ProxyConfiguration | undefined,
@@ -228,6 +238,9 @@ function createPlaywrightCrawlerOptions(
                 launcher: firefox,
             },
             preNavigationHooks: [
+                async ({ page }) => {
+                    await blockMediaRequests(page);
+                },
                 (_context, gotoOptions) => {
                     // eslint-disable-next-line no-param-reassign
                     gotoOptions.waitUntil = 'domcontentloaded';

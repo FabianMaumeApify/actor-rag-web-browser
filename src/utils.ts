@@ -7,6 +7,7 @@ import { log } from 'crawlee';
 
 import ragWebBrowserInputSchema from '../actors/apify_rag-web-browser/.actor/input_schema.json' with { type: 'json' };
 import urlToMarkdownInputSchema from '../actors/apify_url-to-markdown/.actor/input_schema.json' with { type: 'json' };
+import { isMediaUrl } from './media.js';
 import type {
     ContentCrawlerUserData,
     ContentScraperSettings,
@@ -44,6 +45,22 @@ const DOMAIN_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 
 export function isActorStandby(): boolean {
     return Actor.getEnv().metaOrigin === 'STANDBY';
+}
+
+/**
+ * Aborts the run with a terminal status message, instead of crashing or failing it.
+ */
+export async function abortRun(statusMessage: string): Promise<never> {
+    log.error(statusMessage);
+
+    if (!Actor.isAtHome()) {
+        process.exit(1);
+    }
+
+    // Aborting gracefully buys the 30 seconds that the teardown needs before the container is stopped.
+    await Actor.abort(Actor.getEnv().actorRunId!, { statusMessage, gracefully: true });
+    await Actor.exit({ exit: false });
+    process.exit(0);
 }
 
 /**
@@ -174,6 +191,8 @@ export function createRequest(
     return {
         url: result.url!,
         uniqueKey: randomId(),
+        // Media files contain no text to extract, so don't spend any bandwidth on downloading them.
+        skipNavigation: isMediaUrl(result.url!),
         userData: {
             query,
             responseId,

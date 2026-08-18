@@ -11,7 +11,7 @@ Additionally, you can select the **Scraping mode**:
 It will return an output with the following data:
 - URL
 - Markdown of the page
-- Basic metadata
+- Page metadata, including the canonical URL, description, keywords, Open Graph tags, JSON-LD structured data, and HTTP response headers
 
 This Actor doesn't support pagination or crawling to discover new URLs. If you are looking to convert a whole website to Markdown, use the [Website Content Crawler](https://apify.com/apify/website-content-crawler) instead.
 
@@ -35,9 +35,23 @@ This Actor doesn't support pagination or crawling to discover new URLs. If you a
   "metadata": {
     "title": "Apify: Full-stack web scraping and data extraction platform",
     "description": "Cloud platform for web scraping, browser automation, AI agents, and data for AI. Use 38,000+ ready-made tools, code templates, or order a custom solution.",
+    "keywords": "web scraper,web crawler,scraping,data extraction,API",
     "languageCode": "en",
     "url": "https://apify.com",
-    "redirectedUrl": "https://apify.com/"
+    "redirectedUrl": "https://apify.com/",
+    "canonicalUrl": "https://apify.com/",
+    "openGraph": [
+      { "property": "og:title", "content": "Apify: Full-stack web scraping and data extraction platform" },
+      { "property": "og:url", "content": "https://apify.com/" },
+      { "property": "og:site_name", "content": "Apify" }
+    ],
+    "jsonLd": [
+      { "@context": "https://schema.org", "@type": "Organization", "name": "Apify" }
+    ],
+    "headers": {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "public, max-age=0, must-revalidate"
+    }
   },
   "query": "https://apify.com",
   "markdown": "Apify: Full-stack web scraping and data extraction platform\n\n"
@@ -82,6 +96,14 @@ Markdown is the perfect format to feed large language model (LLM). It is a less 
 
 Using markdown instead of html can help you lower the AI token cost.
 
+Relative links such as `/docs` are resolved into absolute URLs against the page they were found on, so they remain valid when the markdown is passed to an LLM.
+
+
+### What happens with media files?
+Media files carry no text to convert, so they are never downloaded. Images, audio, video, and fonts of the converted page are blocked in the Browser mode, and a URL pointing directly to a media file, e.g. `https://example.com/video.mp4`, is not fetched at all — the output contains no content and `Skipped media file` as the HTTP status message.
+
+### What happens with collapsed content?
+Content that a page adds only when the reader expands it, e.g. accordions or FAQ sections, would be missing from the markdown. To capture it, the Browser mode clicks the collapsed elements of the page, i.e. those matching the `[aria-expanded="false"]` CSS selector, before converting it. Elements linking to another page are not clicked, so that the Actor stays on the page it was asked to convert.
 
 ### Can I use URL to Markdown with the Apify API?
 The Apify API gives you programmatic access to the Apify platform. The API is organized around RESTful HTTP endpoints that enable you to manage, schedule, and run Apify Actors. The API also lets you access any datasets, monitor Actor performance, fetch results, create and update versions, and more.

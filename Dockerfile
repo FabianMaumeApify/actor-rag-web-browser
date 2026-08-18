@@ -25,7 +25,7 @@ RUN npm run build
 RUN npm run build:playwright-blockers
 
 # Create final image
-FROM apify/actor-node-playwright-firefox:22-1.54.1
+FROM apify/actor-node-playwright-firefox:22-1.55.1
 
 # Copy just package.json and package-lock.json
 # to speed up the build using Docker layer cache.
@@ -33,11 +33,11 @@ COPY --chown=myuser package*.json ./
 COPY --chown=myuser policies.json ./
 COPY --chown=myuser patches ./patches
 
-# Install NPM packages, skip optional and development dependencies to
-# keep the image small. Avoid logging too much and print the dependency
-# tree for debugging
+# Install NPM packages, skip development dependencies to keep the image small. Avoid logging too
+# much and print the dependency tree for debugging. Optional dependencies are needed - `impit`
+# ships its native bindings as one.
 RUN npm --quiet set progress=false \
-    && npm install --omit=dev --omit=optional \
+    && npm install --omit=dev \
     && echo "Installed NPM packages:" \
     && (npm list --omit=dev --all || true) \
     && echo "Node.js version:" \
