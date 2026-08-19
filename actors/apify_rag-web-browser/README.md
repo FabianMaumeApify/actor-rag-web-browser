@@ -143,7 +143,7 @@ The `/search` GET HTTP endpoint accepts all the input parameters [described on t
 RAG Web Browser has been designed for easy integration with LLM applications, GPTs, OpenAI Assistants, and RAG pipelines using function calling.
 
 ### Use Apify MCP server
-You can connect to the MCP server using clients like Claude Desktop and LibreChat, or even build your own. The RAG Web Browser is the default Actor for the MCP server, so you will access it right after installing the MCP server.
+You can connect to the MCP server using clients like Claude Desktop,  Cursor, Codex, and LibreChat, or even build your own. The RAG Web Browser is the default Actor for the MCP server, so you will access it right after installing the MCP server.
 
 Simply follow the tutorial to set up [Apify MCP server](https://blog.apify.com/how-to-use-mcp/).
 
